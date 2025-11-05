@@ -11,13 +11,23 @@ import {
   addPointLight,
   setupResizeHandler
 } from './three/utils/sceneSetup'
-import { loadBedLight, setupBedLightInteraction } from './three/interactions/bedLightControl'
+import { loadBedLight, setupBedLightInteraction, updateLightState } from './three/interactions/bedLightControl'
+import { useHomeAssistant } from './contexts/HomeAssistantContext'
 
 function ThreeScene() {
   const containerRef = useRef(null)
   const animationFrameIdRef = useRef(0)
   const rendererRef = useRef(null)
+  const pointLightRef = useRef(null)
+  const toggleBedLightRef = useRef(null)
+  
+  // Get Home Assistant context
+  const { toggleBedLight, bedLightIsOn } = useHomeAssistant()
 
+  // Keep toggleBedLight reference updated without causing re-renders
+  toggleBedLightRef.current = toggleBedLight
+
+  // Initialize scene only once on mount
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -36,6 +46,7 @@ function ThreeScene() {
     // Add lights
     addAmbientLight(scene)
     const pointLight = addPointLight(scene)
+    pointLightRef.current = pointLight
 
     // Setup controls
     const controls = createControls(camera, renderer.domElement)
@@ -51,12 +62,19 @@ function ThreeScene() {
         // Load bed light model with clickable area
         const bedLightGroup = await loadBedLight(scene)
         
-        // Setup bed light interaction
+        // Setup bed light interaction with Home Assistant callback
+        // Use a wrapper function that gets the latest toggleBedLight from ref
         const cleanupBedLightInteraction = setupBedLightInteraction(
           camera,
           renderer.domElement,
           bedLightGroup,
-          pointLight
+          pointLight,
+          () => {
+            // Call the current toggleBedLight function from ref
+            if (toggleBedLightRef.current) {
+              return toggleBedLightRef.current()
+            }
+          }
         )
         
         // Store cleanup function for later
@@ -100,7 +118,14 @@ function ThreeScene() {
         }
       }
     }
-  }, [])
+  }, []) // Empty dependencies - only run once on mount
+  
+  // Update light state when Home Assistant state changes
+  useEffect(() => {
+    if (pointLightRef.current && bedLightIsOn !== null) {
+      updateLightState(pointLightRef.current, bedLightIsOn)
+    }
+  }, [bedLightIsOn])
 
   return (
     <div

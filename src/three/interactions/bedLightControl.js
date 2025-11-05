@@ -67,18 +67,26 @@ export async function loadBedLight(scene) {
  * @param {HTMLElement} domElement - The renderer DOM element
  * @param {THREE.Object3D} bedLightGroup - The bed light group
  * @param {THREE.PointLight} pointLight - The point light to toggle
+ * @param {Function} onToggle - Callback function to toggle light (returns Promise)
  * @returns {Function} - Cleanup function to remove event listener
  */
 export function setupBedLightInteraction(
   camera,
   domElement,
   bedLightGroup,
-  pointLight
+  pointLight,
+  onToggle
 ) {
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
+  let isProcessing = false;
 
-  const onMouseClick = (event) => {
+  const onMouseClick = async (event) => {
+    // Prevent multiple simultaneous clicks
+    if (isProcessing) {
+      return;
+    }
+
     // Calculate mouse position in normalized device coordinates
     const rect = domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -92,10 +100,27 @@ export function setupBedLightInteraction(
       const intersects = raycaster.intersectObject(bedLightGroup, true);
 
       if (intersects.length > 0) {
-        // Toggle the point light
-        if (pointLight) {
-          pointLight.visible = !pointLight.visible;
-          console.log("Light toggled:", pointLight.visible ? "ON" : "OFF");
+        isProcessing = true;
+
+        try {
+          // If onToggle callback provided, use it (for HA integration)
+          if (onToggle) {
+            await onToggle();
+            console.log("Light toggled via Home Assistant");
+          } else {
+            // Fallback to local toggle if no callback
+            if (pointLight) {
+              pointLight.visible = !pointLight.visible;
+              console.log(
+                "Light toggled locally:",
+                pointLight.visible ? "ON" : "OFF"
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Failed to toggle light:", error);
+        } finally {
+          isProcessing = false;
         }
       }
     }
@@ -108,4 +133,15 @@ export function setupBedLightInteraction(
   return () => {
     domElement.removeEventListener("click", onMouseClick);
   };
+}
+
+/**
+ * Update light state from external source (e.g., Home Assistant)
+ * @param {THREE.PointLight} pointLight - The point light to update
+ * @param {boolean} isOn - Whether the light should be on
+ */
+export function updateLightState(pointLight, isOn) {
+  if (pointLight) {
+    pointLight.visible = isOn;
+  }
 }
